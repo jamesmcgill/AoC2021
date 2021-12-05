@@ -155,8 +155,146 @@ pub fn part2() anyerror!void {
 }
 
 //--------------------------------------------------------------------------------------------------
+const Allocator = std.mem.Allocator;
+
+//--------------------------------------------------------------------------------------------------
+const Node = struct {
+    value: u32,
+    l: ?*Node,
+    r: ?*Node,
+
+    pub fn init() Node {
+        return Node{
+            .value = 0,
+            .l = null,
+            .r = null,
+        };
+    }
+};
+
+//--------------------------------------------------------------------------------------------------
+pub fn create_node(allocator: *Allocator) ?*Node {
+    const ptr: ?*Node = allocator.create(Node) catch return null;
+    ptr.?.* = Node.init();
+    return ptr;
+}
+
+//--------------------------------------------------------------------------------------------------
+pub fn tree_add(head: *Node, input: []u8, allocator: *Allocator) void {
+    (head.*).value += 1;
+
+    if (input.len == 0) {
+        return;
+    } else if (input[0] == '1') {
+        if (head.l == null) {
+            head.l = create_node(allocator).?;
+        }
+        tree_add(head.l.?, input[1..], allocator);
+    } else {
+        if (head.r == null) {
+            head.r = create_node(allocator).?;
+        }
+        tree_add(head.r.?, input[1..], allocator);
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+pub fn tree_print(head: *Node) void {
+    std.log.info("val={d}", .{head.value});
+    if (head.l != null) {
+        tree_print(head.l.?);
+    }
+    if (head.r != null) {
+        tree_print(head.r.?);
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+pub fn tree_most_common(head: *Node, result: []u8) void {
+    var left_count: u32 = 0;
+    var right_count: u32 = 0;
+
+    if (head.l != null) {
+        left_count = head.l.?.value;
+    }
+    if (head.r != null) {
+        right_count = head.r.?.value;
+    }
+
+    // Go left (1) on tie breaker
+    if (left_count >= right_count and head.l != null) {
+        //std.log.info("1 <= {d}/{d}", .{ left_count, right_count });
+        result[0] = '1';
+        tree_most_common(head.l.?, result[1..]);
+    } else if (head.r != null) {
+        //std.log.info("0 <= {d}/{d}", .{ left_count, right_count });
+        result[0] = '0';
+        tree_most_common(head.r.?, result[1..]);
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+pub fn tree_least_common(head: *Node, result: []u8) void {
+    var left_count: u32 = 0;
+    var right_count: u32 = 0;
+
+    if (head.l != null) {
+        left_count = head.l.?.value;
+    }
+    if (head.r != null) {
+        right_count = head.r.?.value;
+    }
+
+    // Go right (0) on tie breaker
+    if ((right_count == 0 or left_count < right_count) and head.l != null) {
+        //std.log.info("1 <= {d}/{d}", .{ left_count, right_count });
+        result[0] = '1';
+        tree_least_common(head.l.?, result[1..]);
+    } else if (head.r != null) {
+        //std.log.info("0 <= {d}/{d}", .{ left_count, right_count });
+        result[0] = '0';
+        tree_least_common(head.r.?, result[1..]);
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+pub fn part2_with_tree() anyerror!void {
+    const file = std.fs.cwd().openFile("data/day03_input.txt", .{}) catch |err| label: {
+        std.debug.print("unable to open file: {e}\n", .{err});
+        const stderr = std.io.getStdErr();
+        break :label stderr;
+    };
+    defer file.close();
+
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const allocator = &arena.allocator;
+
+    var reader = std.io.bufferedReader(file.reader());
+    var istream = reader.reader();
+    var buf: [12]u8 = undefined;
+    var head = create_node(allocator).?;
+
+    // Traverse file and build tree
+    while (try istream.readUntilDelimiterOrEof(&buf, '\n')) |line| {
+        tree_add(head, buf[0..12], allocator);
+    } // while file
+
+    var most_common_result: [12]u8 = undefined;
+    var least_common_result: [12]u8 = undefined;
+
+    tree_most_common(head, most_common_result[0..]);
+    tree_least_common(head, least_common_result[0..]);
+
+    //tree_print(head);
+    const oxygen: u32 = array_to_int(most_common_result);
+    const co2: u32 = array_to_int(least_common_result);
+    std.log.info("Part 2 oxygen={s}, co2={s}, answer={d}", .{ most_common_result, least_common_result, oxygen * co2 });
+}
+
+//--------------------------------------------------------------------------------------------------
 pub fn main() anyerror!void {
-    try part1();
-    try part2();
+    //try part1();
+    try part2_with_tree();
 }
 //--------------------------------------------------------------------------------------------------
