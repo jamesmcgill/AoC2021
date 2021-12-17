@@ -1,57 +1,74 @@
 const std = @import("std");
 
-const Allocator = std.mem.Allocator;
-const ArrayList = std.ArrayList;
-//const Nodes = ArrayList(Node);
-const Visited = ArrayList([]const u8);
-
-//--------------------------------------------------------------------------------------------------
-const Connection = struct {
-    a: []const u8,
-    b: []const u8,
-};
+const CaveList = [12]Node;
+const HashList = [24]u8;
 
 //--------------------------------------------------------------------------------------------------
 const Node = struct {
-    val: []const u8,
-    children: [6]*Node,
-    child_count: u8,
+    name: []const u8,
+    hash: u8,
+    connection_indices: [6]usize,
+    connection_count: u8,
     is_small: bool,
 
-    pub fn init(val: []const u8) Node {
-        return Node{ .val = val, .children = undefined, .child_count = 0, .is_small = is_small(val) };
+    pub fn init(name: []const u8) Node {
+        return Node{ .name = name, .hash = cave_hash(name), .connection_indices = undefined, .connection_count = 0, .is_small = is_small_string(name) };
     }
 
-    pub fn attach(self: *Node, new: *Node) void {
-        self.children[self.child_count] = new;
-        self.child_count += 1;
-    }
-
-    pub fn has_child(self: *Node, value: []const u8) bool {
-        for (self.children[0..self.child_count]) |child| {
-            if (std.mem.eql(u8, child.val, value)) {
-                return true;
-            }
-        }
-        return false;
+    pub fn attach(self: *Node, index: usize) void {
+        self.connection_indices[self.connection_count] = index;
+        self.connection_count += 1;
     }
 };
 
 //--------------------------------------------------------------------------------------------------
-pub fn in_list(list: *Visited, value: []const u8) bool {
-    for (list.items) |item| {
-        if (std.mem.eql(u8, item, value)) {
-            return true;
-        }
-    }
-    return false;
+pub fn is_small_string(value: []const u8) bool {
+    return (value[0] >= 'a');
 }
 
 //--------------------------------------------------------------------------------------------------
-pub fn count_in_list(list: *Visited, value: []const u8) u32 {
-    var count: u32 = 0;
-    for (list.items) |item| {
-        if (std.mem.eql(u8, item, value)) {
+pub fn cave_hash(string: []const u8) u8 {
+    if (std.mem.eql(u8, string, "end")) {
+        return 0;
+    }
+
+    var hash: u8 = string[0];
+    hash +%= string[1];
+    return hash;
+}
+
+//--------------------------------------------------------------------------------------------------
+pub fn attempt_add_cave(cave_list: *CaveList, cave_count: *usize, new_cave: []const u8) void {
+    const hash = cave_hash(new_cave);
+    for (cave_list) |existing| {
+        if (existing.hash == hash) {
+            return; // already exists
+        }
+    }
+
+    //std.log.info("adding cave {s} at pos {d}", .{ new_cave, cave_count.* });
+    cave_list[cave_count.*] = Node.init(new_cave);
+    cave_count.* += 1;
+}
+
+//--------------------------------------------------------------------------------------------------
+pub fn find_cave_idx(cave_list: CaveList, cave_count: usize, find: []const u8) usize {
+    _ = cave_count;
+
+    const hash = cave_hash(find);
+    for (cave_list) |existing, idx| {
+        if (existing.hash == hash) {
+            return idx;
+        }
+    }
+    unreachable;
+}
+
+//--------------------------------------------------------------------------------------------------
+pub fn count_visits(hash: u8, visited: HashList, visited_count: usize) u8 {
+    var count: u8 = 0;
+    for (visited[0..visited_count]) |visited_hash| {
+        if (visited_hash == hash) {
             count += 1;
         }
     }
@@ -59,121 +76,46 @@ pub fn count_in_list(list: *Visited, value: []const u8) u32 {
 }
 
 //--------------------------------------------------------------------------------------------------
-pub fn is_small(value: []const u8) bool {
-    //if (std.mem.eql(u8, value, "end")) {
-    //    return false;
-    //}
-
-    return (value[0] >= 'a');
+pub fn attach_cave(cave_list: *CaveList, cave_count: usize, node: []const u8, attachee: []const u8) void {
+    const a_idx = find_cave_idx(cave_list.*, cave_count, node);
+    const b_idx = find_cave_idx(cave_list.*, cave_count, attachee);
+    cave_list[a_idx].attach(b_idx);
 }
 
 //--------------------------------------------------------------------------------------------------
-pub fn refuse_visit(visited: *Visited, value: []const u8, allowed_twice: *const [2:0]u8) bool {
-    if (std.mem.eql(u8, value, "start")) {
-        return true;
-    }
-
-    if (!is_small(value)) {
-        return false;
-    }
-
-    const count = count_in_list(visited, value);
-    if (count == 0) {
-        return false;
-    } else if (count == 1 and std.mem.eql(u8, value, allowed_twice)) {
-        return false;
-    }
-    return true;
-}
-
-//--------------------------------------------------------------------------------------------------
-pub fn attempt_insert(node: *Node, conn: *Connection, allocator: Allocator, visited_in: *Visited, allowed_twice: *const [2:0]u8) bool {
-    // Don't attach beyond end nodes
-    if (std.mem.eql(u8, node.*.val, "end")) {
-        return false;
-    }
-
-    var visited = Visited.initCapacity(allocator, visited_in.items.len) catch unreachable;
-    defer visited.deinit();
-    visited.appendSliceAssumeCapacity(visited_in.items);
-    visited.append(node.*.val) catch unreachable;
-
-    // Can it attach to this node?
-    if (std.mem.eql(u8, conn.*.a, node.*.val)) {
-        if (!node.*.has_child(conn.b)) { // Don't repeat child
-            if (!refuse_visit(&visited, conn.b, allowed_twice)) {
-                var new_node = allocator.create(Node) catch unreachable;
-                new_node.* = Node.init(conn.b);
-                node.*.attach(new_node);
-                //std.debug.print("visited:{s}", .{visited.items});
-                //std.debug.print("->{s}\n", .{new_node.*.val});
-                return true;
+pub fn count_paths(node_idx: usize, cave_list: CaveList, cave_count: usize, visited: *HashList, visited_count: *usize, allow_double_visit: u8) u32 {
+    const hash = cave_list[node_idx].hash;
+    if (hash == 0) { // reached end
+        // If double visits are allowed, then only return if double visits occurred. This prevents double counting of combinations without double visits
+        if (allow_double_visit != 0) {
+            const visit_count = count_visits(allow_double_visit, visited.*, visited_count.*);
+            if (visit_count != 2) {
+                return 0; // excluded as double visit didn't occur
             }
         }
-    } else if (std.mem.eql(u8, conn.*.b, node.*.val)) {
-        if (!node.*.has_child(conn.a)) { // Don't repeat child
-            if (!refuse_visit(&visited, conn.a, allowed_twice)) {
-                var new_node = allocator.create(Node) catch unreachable;
-                new_node.* = Node.init(conn.a);
-                node.*.attach(new_node);
-                //std.debug.print("visited:{s}", .{visited.items});
-                //std.debug.print("->{s}\n", .{new_node.*.val});
-                return true;
-            }
+        return 1;
+    }
+    visited[visited_count.*] = hash;
+    visited_count.* += 1;
+
+    const this_cave = cave_list[node_idx];
+    const connection_count = this_cave.connection_count;
+    var total: u32 = 0;
+    for (this_cave.connection_indices[0..connection_count]) |connection_idx| {
+        const next_cave = cave_list[connection_idx];
+        const visit_count = count_visits(next_cave.hash, visited.*, visited_count.*);
+        const can_visit = (next_cave.is_small == false or visit_count == 0 or (visit_count == 1 and next_cave.hash == allow_double_visit));
+        if (can_visit) {
+            total += count_paths(connection_idx, cave_list, cave_count, visited, visited_count, allow_double_visit);
         }
     }
 
-    // Traverse the remainder of the tree looking for a place to insert
-    for (node.*.children[0..node.*.child_count]) |child| {
-        if (attempt_insert(child, conn, allocator, &visited, allowed_twice)) {
-            return true;
-        }
-    }
-
-    return false;
+    visited_count.* -= 1; // pop visited
+    return total;
 }
 
 //--------------------------------------------------------------------------------------------------
-pub fn print(node: *Node, depth: u32, parent: []const u8) void {
-    std.debug.print("({d}){s}->{s}, ", .{ depth, node.*.val, parent });
-    if (std.mem.eql(u8, node.*.val, "end")) {
-        std.debug.print("\n", .{});
-    }
-    for (node.*.children[0..node.*.child_count]) |child| {
-        print(child, depth + 1, node.*.val);
-    }
-}
-
-//--------------------------------------------------------------------------------------------------
-pub fn print_alt(node: *Node, depth: u32) void {
-    std.debug.print("({d}){s}: ", .{ depth, node.*.val });
-    for (node.*.children[0..node.*.child_count]) |child| {
-        std.debug.print("{s}, ", .{child.*.val});
-    }
-    std.debug.print("\n", .{});
-
-    for (node.*.children[0..node.*.child_count]) |child| {
-        print_alt(child, depth + 1);
-    }
-}
-
-//--------------------------------------------------------------------------------------------------
-pub fn count_paths(node: *Node, count: *u32) void {
-    if (std.mem.eql(u8, node.*.val, "end")) {
-        count.* += 1;
-        return;
-    }
-    for (node.*.children[0..node.*.child_count]) |child| {
-        count_paths(child, count);
-    }
-}
-
-//--------------------------------------------------------------------------------------------------
-pub fn part1() anyerror!void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
-
+pub fn main() anyerror!void {
     var buf: [1024]u8 = undefined;
     var buf_size: usize = undefined;
     {
@@ -188,58 +130,39 @@ pub fn part1() anyerror!void {
         buf_size = try istream.readAll(&buf);
     }
 
-    var connections: [23]Connection = undefined;
+    var caves: CaveList = undefined;
+    var cave_count: usize = 0;
     {
         var lines = std.mem.tokenize(u8, buf[0..buf_size], "\n");
         var i: usize = 0;
         while (lines.next()) |line| : (i += 1) {
             var nodes = std.mem.tokenize(u8, line, "-");
-            connections[i].a = nodes.next().?;
-            connections[i].b = nodes.next().?;
-            //std.log.info("line:{s}", .{line});
-            //std.log.info("connector[{d}] :{s} - {s}", .{ i, connections[i].a, connections[i].b });
+            var a = nodes.next().?;
+            var b = nodes.next().?;
+            attempt_add_cave(&caves, &cave_count, a);
+            attempt_add_cave(&caves, &cave_count, b);
+
+            attach_cave(&caves, cave_count, a, b);
+            attach_cave(&caves, cave_count, b, a);
         }
     }
+
+    const allow_double_visit: u8 = 0; // Magic value that means no cave is allowed to be visited twice
+    var visited: HashList = undefined;
+    var visited_count: usize = 0;
+
+    const start_idx = find_cave_idx(caves, cave_count, "start");
+
+    const part1_count: u32 = count_paths(start_idx, caves, cave_count, &visited, &visited_count, allow_double_visit);
+    std.log.info("Part 1 num_paths: {d}", .{part1_count});
 
     const allowed_twice = [_]*const [2:0]u8{ "yw", "wn", "dc", "ah", "fi", "th" };
-    var total_count: u32 = 0;
-
+    var part2_count: u32 = part1_count;
     for (allowed_twice) |allowed| {
-        std.log.info("allowed: {s}", .{allowed});
-        var start = try allocator.create(Node);
-        start.* = Node.init("start");
-
-        while (true) {
-            var was_insertion: bool = false;
-            for (connections) |*conn| {
-                var visited = Visited.init(allocator);
-                defer visited.deinit();
-                if (attempt_insert(start, conn, allocator, &visited, allowed)) {
-                    was_insertion = true;
-                }
-            }
-            if (!was_insertion) { // exhausted all insertions
-                break;
-            }
-        }
-        var count: u32 = 0;
-        count_paths(start, &count);
-        std.log.info("count: {d}", .{count});
-        total_count += count;
+        const allowed_hash = cave_hash(allowed);
+        part2_count += count_paths(start_idx, caves, cave_count, &visited, &visited_count, allowed_hash);
     }
-    //for (connections) |conn| {
-    //    std.log.info("conn: {}", .{conn});
-    //}
-
-    std.log.info("Part 2 count: {d}", .{total_count});
-
-    //print_alt(start, 0);
-}
-
-//--------------------------------------------------------------------------------------------------
-pub fn main() anyerror!void {
-    try part1();
-    //try part2();
+    std.log.info("Part 2 num_paths: {d}", .{part2_count});
 }
 
 //--------------------------------------------------------------------------------------------------
