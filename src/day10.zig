@@ -58,8 +58,9 @@ pub fn part1() anyerror!void {
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
+    var allocator = arena.allocator();
 
-    var completion_scores = ArrayList(u64).init(&arena.allocator);
+    var completion_scores = ArrayList(u64).init(allocator);
     completion_scores.deinit();
 
     var num_error: u32 = 0;
@@ -71,7 +72,7 @@ pub fn part1() anyerror!void {
         var istream = reader.reader();
         var buf: [128]u8 = undefined;
 
-        var stack = ArrayList(u8).init(&arena.allocator);
+        var stack = ArrayList(u8).init(allocator);
         stack.deinit();
 
         while (try istream.readUntilDelimiterOrEof(&buf, '\n')) |line| {

@@ -12,10 +12,6 @@ pub fn part1() anyerror!void {
     };
     defer file.close();
 
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = &arena.allocator;
-
     const file_size = try file.getEndPos();
     std.log.info("File size {}", .{file_size});
 
@@ -28,7 +24,7 @@ pub fn part1() anyerror!void {
 
     while (try istream.readUntilDelimiterOrEof(&buf, '\n')) |line| {
         var i: usize = 0;
-        var it = std.mem.tokenize(line, " |");
+        var it = std.mem.tokenize(u8, line, " |");
         while (it.next()) |value| : (i += 1) {
             codes[i] = value;
         }
@@ -202,10 +198,6 @@ pub fn part2() anyerror!void {
         break :label stderr;
     };
     defer file.close();
-
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = &arena.allocator;
 
     const file_size = try file.getEndPos();
     std.log.info("File size {}", .{file_size});

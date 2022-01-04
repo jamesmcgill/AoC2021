@@ -21,6 +21,7 @@ pub fn part1() anyerror!void {
         var row: usize = 0;
         while (try istream.readUntilDelimiterOrEof(&buf, '\n')) |line| : (row += 1) {
             for (line) |char, col| {
+                _ = char;
                 heightmap[row][col] = std.fmt.parseInt(u8, buf[col .. col + 1], 10) catch 0;
                 //std.log.info("[{d}][{d}] = {d}", .{ row, col, heightmap[row][col] });
             }
@@ -101,6 +102,7 @@ pub fn part2() anyerror!void {
         var row: usize = 0;
         while (try istream.readUntilDelimiterOrEof(&buf, '\n')) |line| : (row += 1) {
             for (line) |char, col| {
+                _ = char;
                 heightmap[row][col] = std.fmt.parseInt(u8, buf[col .. col + 1], 10) catch 0;
             }
         }
@@ -130,8 +132,8 @@ pub fn part2() anyerror!void {
     // TODO: hashmap would have been much better here
     while (marker < marker_end) : (marker += 1) {
         var count: u32 = 0;
-        for (heightmap) |row, i| {
-            for (row) |entry, j| {
+        for (heightmap) |row| {
+            for (row) |entry| {
                 if (entry == marker) {
                     count += 1;
                 }

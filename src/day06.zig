@@ -15,7 +15,7 @@ pub fn part1() anyerror!void {
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
-    const allocator = &arena.allocator;
+    var allocator = arena.allocator();
 
     const file_size = try file.getEndPos();
     std.log.info("File size {}", .{file_size});
@@ -26,7 +26,7 @@ pub fn part1() anyerror!void {
 
     var buf: [1024]u8 = undefined;
     while (try istream.readUntilDelimiterOrEof(&buf, '\n')) |line| {
-        var it = std.mem.tokenize(line, ",");
+        var it = std.mem.tokenize(u8, line, ",");
         while (it.next()) |value| {
             fish.append(std.fmt.parseInt(u8, value, 10) catch 0) catch unreachable;
         }
@@ -58,10 +58,6 @@ pub fn part2() anyerror!void {
     };
     defer file.close();
 
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = &arena.allocator;
-
     const file_size = try file.getEndPos();
     std.log.info("File size {}", .{file_size});
 
@@ -71,7 +67,7 @@ pub fn part2() anyerror!void {
 
     var buf: [1024]u8 = undefined;
     while (try istream.readUntilDelimiterOrEof(&buf, '\n')) |line| {
-        var it = std.mem.tokenize(line, ",");
+        var it = std.mem.tokenize(u8, line, ",");
         while (it.next()) |value| {
             const gen = std.fmt.parseInt(u8, value, 10) catch 0;
             fish[gen] += 1;

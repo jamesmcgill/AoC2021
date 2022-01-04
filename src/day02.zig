@@ -21,7 +21,7 @@ pub fn part1() anyerror!void {
 
     while (try istream.readUntilDelimiterOrEof(&buf, '\n')) |line| {
         //std.log.info("{s}", .{line});
-        var it = std.mem.split(line, " ");
+        var it = std.mem.split(u8, line, " ");
 
         const command = it.next() orelse "none";
         const raw_value = it.next() orelse "0";
@@ -61,7 +61,7 @@ pub fn part2() anyerror!void {
 
     while (try istream.readUntilDelimiterOrEof(&buf, '\n')) |line| {
         //std.log.info("{s}", .{line});
-        var it = std.mem.split(line, " ");
+        var it = std.mem.split(u8, line, " ");
 
         const command = it.next() orelse "none";
         const raw_value = it.next() orelse "0";

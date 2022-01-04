@@ -29,7 +29,7 @@ pub fn part1() anyerror!void {
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
-    const allocator = &arena.allocator;
+    const allocator = arena.allocator();
 
     const file_size = try file.getEndPos();
     std.log.info("File size {}", .{file_size});
@@ -40,7 +40,7 @@ pub fn part1() anyerror!void {
 
     var buf: [4096]u8 = undefined;
     while (try istream.readUntilDelimiterOrEof(&buf, '\n')) |line| {
-        var it = std.mem.tokenize(line, ",");
+        var it = std.mem.tokenize(u8, line, ",");
         while (it.next()) |value| {
             crabs.append(std.fmt.parseInt(u16, value, 10) catch 0) catch unreachable;
         }

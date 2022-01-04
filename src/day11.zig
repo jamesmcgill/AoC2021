@@ -5,7 +5,7 @@ const ArrayList = std.ArrayList;
 
 //--------------------------------------------------------------------------------------------------
 pub fn print(grid: [10][10]u8) void {
-    for (grid) |row, i| {
+    for (grid) |row| {
         std.log.info("{d}", .{row});
     }
     std.log.info("--------------------------------", .{});
@@ -92,6 +92,7 @@ pub fn part1() anyerror!void {
         var row: usize = 0;
         while (try istream.readUntilDelimiterOrEof(&buf, '\n')) |line| : (row += 1) {
             for (line) |char, col| {
+                _ = char;
                 octopuses[row][col] = std.fmt.parseInt(u8, buf[col .. col + 1], 10) catch 9;
             }
         }
@@ -126,6 +127,7 @@ pub fn part2() anyerror!void {
         var row: usize = 0;
         while (try istream.readUntilDelimiterOrEof(&buf, '\n')) |line| : (row += 1) {
             for (line) |char, col| {
+                _ = char;
                 octopuses[row][col] = std.fmt.parseInt(u8, buf[col .. col + 1], 10) catch 9;
             }
         }

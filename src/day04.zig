@@ -3,7 +3,7 @@ const std = @import("std");
 //--------------------------------------------------------------------------------------------------
 pub fn is_winning_board(board: [5][5]?u32) bool {
     // Check if entire row is cleared
-    for (board) |row, row_idx| {
+    for (board) |row| {
         var is_row_empty = true;
         for (row) |cell| {
             if (cell != null) {
@@ -83,12 +83,11 @@ pub fn part1() anyerror!void {
     var istream = reader.reader();
 
     var buf: [1024]u8 = undefined;
-    var counts = [_]u32{0} ** 12;
     var line_count: u32 = 0;
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
-    const allocator = &arena.allocator;
+    const allocator = arena.allocator();
 
     var input = std.ArrayList(u32).init(allocator);
     defer input.deinit();
@@ -107,14 +106,14 @@ pub fn part1() anyerror!void {
 
         // Store the input from the first line in input
         if (line_count == 0) {
-            var it = std.mem.tokenize(line, ", ");
+            var it = std.mem.tokenize(u8, line, ", ");
             while (it.next()) |value| {
                 input.append(std.fmt.parseInt(u32, value, 10) catch 0) catch unreachable;
                 //std.log.info("Value {d}", .{current_val});
             }
             std.log.info("ArrayList size {}", .{input.items.len});
         } else if (line.len > 0) {
-            var it = std.mem.tokenize(line, " ");
+            var it = std.mem.tokenize(u8, line, " ");
             while (it.next()) |value| {
                 cur_values[cur_values_idx] = std.fmt.parseInt(u32, value, 10) catch 0;
                 cur_values_idx += 1;

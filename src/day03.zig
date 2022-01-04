@@ -19,7 +19,7 @@ pub fn part1() anyerror!void {
     var counts = [_]u32{0} ** 12;
     var line_count: u32 = 0;
 
-    while (try istream.readUntilDelimiterOrEof(&buf, '\n')) |line| {
+    while (try istream.readUntilDelimiterOrEof(&buf, '\n')) {
         //std.log.info("{s}", .{line});
         line_count += 1;
 
@@ -105,6 +105,8 @@ pub fn part2() anyerror!void {
     var final_co2 = [_]u8{'0'} ** 12;
 
     for (buf) |digit, col_idx| {
+        _ = digit;
+
         oxygen_lines_count = 0;
         oxygen_set_count = 0;
         co2_lines_count = 0;
@@ -113,7 +115,7 @@ pub fn part2() anyerror!void {
         // Read the whole file. But just examining one column (digit)
         try file.seekTo(0);
         var istream = reader.reader();
-        while (try istream.readUntilDelimiterOrEof(&buf, '\n')) |line| {
+        while (try istream.readUntilDelimiterOrEof(&buf, '\n')) {
             //std.log.info("{s}", .{line});
             var is_oxygen = eq_array(oxygen, buf, @truncate(u32, col_idx));
             var is_co2 = eq_array(co2, buf, @truncate(u32, col_idx));
@@ -268,16 +270,17 @@ pub fn part2_with_tree() anyerror!void {
 
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
-    const allocator = &arena.allocator;
+    var allocator = arena.allocator();
 
     var reader = std.io.bufferedReader(file.reader());
     var istream = reader.reader();
     var buf: [12]u8 = undefined;
-    var head = create_node(allocator).?;
+    var head = create_node(&allocator).?;
 
     // Traverse file and build tree
     while (try istream.readUntilDelimiterOrEof(&buf, '\n')) |line| {
-        tree_add(head, buf[0..12], allocator);
+        _ = line;
+        tree_add(head, buf[0..12], &allocator);
     } // while file
 
     var most_common_result: [12]u8 = undefined;
