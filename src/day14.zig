@@ -1,78 +1,17 @@
 const std = @import("std");
-const Rules = [100][3]u8;
-const RulesSlice = [][3]u8;
-const Counts = ['Z' - 'A' + 1]u64;
-const Allocator = std.mem.Allocator;
 
 //--------------------------------------------------------------------------------------------------
-pub fn grow_pair(pair: [2]u8, rules: RulesSlice, l: *[2]u8, r: *[2]u8) void {
-    for (rules) |rule| {
-        if (rule[0] == pair[0] and rule[1] == pair[1]) {
-            l[0] = pair[0];
-            l[1] = rule[2];
-
-            r[0] = rule[2];
-            r[1] = pair[1];
-            return;
-        }
-    }
-}
-//--------------------------------------------------------------------------------------------------
-pub fn grow_recursive(pair: [2]u8, depth: u8, rules: RulesSlice, counts: *Counts) void {
-    // Count only the first character of every pair.
-    // This is because the second character will also appear (as duplicate) in the next pair
-    // The only issue with doing this, is that the second character at the very end will not be counted.
-    // However it will be same as the last character at the beginning
-    if (depth == 0) {
-        counts[pair[0] - 'A'] += 1;
-        //std.log.info("({d}): LEAF: {s}", .{ depth, pair });
-        return;
-    }
-
-    var l: [2]u8 = undefined;
-    var r: [2]u8 = undefined;
-    grow_pair(pair, rules, &l, &r);
-    //std.log.info("({d}): grow: {s} -> {s}:{s}", .{ depth, pair, l, r });
-
-    grow_recursive(l, depth - 1, rules, counts);
-    grow_recursive(r, depth - 1, rules, counts);
-}
-
-//--------------------------------------------------------------------------------------------------
-pub fn count_difference_after_steps(steps: u8, template: []u8, rules: RulesSlice, counts: *Counts) u64 {
-    std.log.info("Calculating...", .{});
-    var pair: [2]u8 = undefined;
-    var i: usize = 1;
-    while (i < template.len) : (i += 1) {
-        //std.log.info("i: {d}", .{i});
-        pair[0] = template[i - 1];
-        pair[1] = template[i];
-        grow_recursive(pair, steps, rules, counts);
-    }
-    counts[template[template.len - 1] - 'A'] += 1; // Manually count the last character (as we missed it during recursion)
-    std.log.info("Counting...", .{});
-
-    var min: u64 = std.math.maxInt(u64);
-    var max: u64 = 0;
-    var total: u64 = 0;
-    for (counts) |count| {
-        if (count == 0) {
-            continue;
-        }
-        min = std.math.min(count, min);
-        max = std.math.max(count, max);
-        total += count;
-    }
-
-    // After 10 steps, 1 pair would expand to 1025. (2^n + 1)
-    const expected_total: usize = ((template.len - 1) * (std.math.pow(usize, 2, steps))) + 1;
-    std.log.info("Total difference: {d}  ({d} - {d}) : Total: {d}/{d}", .{ max - min, max, min, total, expected_total });
-
-    return max - min;
-}
+const Entry = struct {
+    total_count: u64,
+    spawn_count: u64,
+    spawn_pair_left: [2]u8,
+    spawn_pair_right: [2]u8,
+};
 
 //--------------------------------------------------------------------------------------------------
 pub fn main() anyerror!void {
+    var timer = try std.time.Timer.start();
+
     const file = std.fs.cwd().openFile("data/day14_input.txt", .{}) catch |err| label: {
         std.debug.print("unable to open file: {e}\n", .{err});
         const stderr = std.io.getStdErr();
@@ -80,53 +19,147 @@ pub fn main() anyerror!void {
     };
     defer file.close();
 
-    var counts: Counts = undefined;
-    for (counts) |*c| {
-        c.* = 0;
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    var allocator = arena.allocator();
+
+    var map = std.AutoHashMap([2]u8, Entry).init(allocator);
+    defer {
+        map.deinit();
     }
 
-    var rules: Rules = undefined;
-    var rule_count: usize = 0;
-
-    var template: [20]u8 = undefined;
-    var template_count: usize = 0;
+    var template_buf: [20]u8 = undefined;
+    var template_slice: ?[]u8 = undefined;
     {
         var reader = std.io.bufferedReader(file.reader());
         var istream = reader.reader();
         var buf: [20]u8 = undefined;
 
         // Read template
-        const template_slice = try istream.readUntilDelimiterOrEof(&template, '\n');
-        template_count = template_slice.?.len;
+        template_slice = try istream.readUntilDelimiterOrEof(&template_buf, '\n');
+        std.debug.assert(template_slice != null);
+
         // Read insertion rules
         while (try istream.readUntilDelimiterOrEof(&buf, '\n')) |line| {
             if (line.len == 0) {
                 continue;
             }
             var it = std.mem.split(u8, line, " -> ");
-            const rule = it.next().?;
-            //std.log.info("rule: {c}", .{rule});
+            const pattern = it.next().?;
+            //std.log.info("pattern: {c}", .{pattern});
             const insertion = it.next().?;
             //std.log.info("insertion: {c}", .{insertion});
-            rules[rule_count][0] = rule[0];
-            rules[rule_count][1] = rule[1];
-            rules[rule_count][2] = insertion[0];
-            rule_count += 1;
+
+            // Add all rules into the map
+            const entry = Entry{
+                .total_count = 0,
+                .spawn_count = 0,
+                .spawn_pair_left = [2]u8{ pattern[0], insertion[0] },
+                .spawn_pair_right = [2]u8{ insertion[0], pattern[1] },
+            };
+            var key = [2]u8{ pattern[0], pattern[1] };
+            try map.put(key, entry);
         }
     }
-    //std.log.info("template: {c}", .{template});
-    //std.log.info("rules: {c}", .{rules});
+    //std.log.info("template: {c}", .{template_slice});
 
-    const part1_diff = count_difference_after_steps(10, template[0..template_count], rules[0..rule_count], &counts);
-    std.log.info("Part 1: {d}", .{part1_diff});
-    //std.log.info("counts: {d}", .{counts});
-
-    // Part 2
-    for (counts) |*c| {
-        c.* = 0;
+    // Prime map with initial entries from the template
+    // NOTE: The second iteration will create a pair that duplicates the last letter
+    // from the first iteration e.g. CFBV -> CF FB BV
+    // This means every letter is duplicated by the pairing except the first and last.
+    // This needs to be accounted for during the counting stage.
+    {
+        var key: [2]u8 = undefined;
+        var i: usize = 1;
+        while (i < template_slice.?.len) : (i += 1) {
+            key[0] = template_slice.?[i - 1];
+            key[1] = template_slice.?[i];
+            map.getPtr(key).?.total_count += 1;
+        }
     }
-    //const part2_diff = count_difference_after_steps(40, template[0..template_count], rules[0..rule_count], &counts);
-    //std.log.info("Part 2: {d}", .{part2_diff});
+
+    // Apply steps
+    {
+        const part1_iterations: u32 = 10;
+        const part2_iterations: u32 = 40;
+
+        var i: usize = 0;
+        while (i < part2_iterations) : (i += 1) {
+            if (i == part1_iterations) {
+                std.log.info("Part 1: {d}", .{calc_min_max_diff(map, template_slice.?)});
+            }
+
+            // Expand each `current` pair of letters to spawn 2 new pairs
+            // These 2 new pairs will replace the current pair on the next iteration
+            // NOTE: this means from 2 letters we spawn 4 letters (not just 3)
+            // e.g. CF FB BV -> CxxF FyyB BzzV
+            // Therefore we continue to have double the amount of letters (excluding first/last).
+            {
+                var it = map.iterator();
+                while (it.next()) |pair| {
+                    const value_ptr = pair.value_ptr;
+
+                    const left = &value_ptr.spawn_pair_left;
+                    const right = &value_ptr.spawn_pair_right;
+
+                    map.getPtr(left.*).?.spawn_count += value_ptr.total_count;
+                    map.getPtr(right.*).?.spawn_count += value_ptr.total_count;
+                }
+            }
+
+            // Now spawn all new pairs we found in the last pass
+            {
+                var it = map.iterator();
+                while (it.next()) |pair| {
+                    const value_ptr = pair.value_ptr;
+
+                    // Replace `current` pairs with only the pairs that were spawned
+                    // in this iteration.
+                    value_ptr.total_count = value_ptr.spawn_count;
+                    value_ptr.spawn_count = 0;
+                }
+            }
+        }
+    }
+    std.log.info("Part 2: {d}", .{calc_min_max_diff(map, template_slice.?)});
+    std.log.info("Completed in {d:.2}ms\n", .{@intToFloat(f32, timer.lap()) / 1.0e+6});
+}
+
+//--------------------------------------------------------------------------------------------------
+fn calc_min_max_diff(map: std.AutoHashMap([2]u8, Entry), template: []u8) u64 {
+    var letters = [_]u64{0} ** 27;
+    // As we have double counted the letters except for the first and last,
+    // we should increase the count of the first and last letters, so that
+    // everything is double counted (for now).
+    letters[template[0] - 'A'] += 1;
+    letters[template[template.len - 1] - 'A'] += 1;
+
+    // For all the `current` pairs, count the individual letters
+    var it = map.iterator();
+    while (it.next()) |pair| {
+        const key = pair.key_ptr.*;
+        const value_ptr = pair.value_ptr;
+
+        letters[key[0] - 'A'] += value_ptr.total_count;
+        letters[key[1] - 'A'] += value_ptr.total_count;
+    }
+
+    var min: u64 = std.math.maxInt(u64);
+    var max: u64 = 0;
+
+    // Find the max and mins
+    for (letters) |count| {
+        if (count != 0 and min > count) {
+            min = count;
+        }
+
+        if (max < count) {
+            max = count;
+        }
+    }
+
+    // NOTE: half the counts because we double counted everything.
+    return (max - min) / 2;
 }
 
 //--------------------------------------------------------------------------------------------------
