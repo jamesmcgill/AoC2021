@@ -49,6 +49,7 @@ const State = struct {
     w: i64 = 0,
     input: Input = undefined,
 };
+
 //--------------------------------------------------------------------------------------------------
 pub fn get_register_value(register: Register, state: State) i64 {
     const ret = switch (register) {
@@ -179,6 +180,23 @@ pub fn perform(instr: Instruction, state: *State) void {
 }
 
 //--------------------------------------------------------------------------------------------------
+pub fn is_input_valid(input: u64, program: Program, allocator: Allocator) bool {
+    var state = State{};
+    state.input = Input.init(allocator);
+    defer state.input.deinit();
+    if (!set_state_input(input, &state)) {
+        return false;
+    }
+
+    for (program.items) |ins| {
+        perform(ins, &state);
+    }
+    std.log.info("Input: {d} produced: State: w:{d}, x:{d}, y:{d}, z:{d}, input:{d}", .{ input, state.w, state.x, state.y, state.z, state.input.items });
+
+    return (state.z == 0);
+}
+
+//--------------------------------------------------------------------------------------------------
 pub fn main() anyerror!void {
     var timer = try std.time.Timer.start();
 
@@ -193,6 +211,7 @@ pub fn main() anyerror!void {
 
     var program = Program.init(allocator);
     defer program.deinit();
+
     //----------------------------------------------------------------------------------------------
     // Parse the input data
     {
@@ -207,8 +226,6 @@ pub fn main() anyerror!void {
             const lhs_str = line_it.next() orelse "";
             const rhs_str = line_it.next() orelse "";
 
-            //std.log.info("Instruction: {s} {s} {s}", .{ instruction_str, lhs_str, rhs_str });
-
             const ins = Instruction{
                 .opcode = parseOpcode(instruction_str),
                 .lhs = parseOperand(lhs_str),
@@ -218,32 +235,120 @@ pub fn main() anyerror!void {
         }
     }
 
-    var input: u64 = 99999_99999_9999;
-    while (true) : (input -= 1) {
-        var state = State{};
-        state.input = Input.init(allocator);
-        defer state.input.deinit();
-        if (!set_state_input(input, &state)) {
-            continue;
-        }
+    // Part 1 - Find max code
+    {
+        var code = Input.init(allocator);
+        defer code.deinit();
+        _ = forward_digit(0, 0, &code, true);
+        const input_max = build_code(&code);
 
-        for (program.items) |ins| {
-            //std.log.info("{s} {d} {d}", .{ ins.opcode, ins.lhs, ins.rhs });
-            perform(ins, &state);
-        }
-        // std.log.info("input {d}. State: w:{d}, x:{d}, y:{d}, z:{d}, input:{d}", .{ input, state.w, state.x, state.y, state.z, state.input.items });
-        if (state.z == 0) {
-            std.log.info("Found valid input! {d}. State: w:{d}, x:{d}, y:{d}, z:{d}, input:{d}", .{ input, state.w, state.x, state.y, state.z, state.input.items });
-            break;
-        }
-        if (input == 0) {
-            break;
-        }
+        const is_valid = is_input_valid(input_max, program, allocator);
+        std.log.info("Part 1: Max Input: {d}, valid = {b}", .{ input_max, is_valid });
     }
 
-    //std.log.info("Instruction count: {d}", .{program.items.len});
+    // Part 2 - Find min code
+    {
+        var code = Input.init(allocator);
+        defer code.deinit();
+        _ = forward_digit(0, 0, &code, false);
+        const input_min = build_code(&code);
+
+        const is_valid = is_input_valid(input_min, program, allocator);
+        std.log.info("Part 2: Min Input: {d}, valid = {b}", .{ input_min, is_valid });
+    }
 
     std.log.info("Completed in {d:.2}ms", .{@intToFloat(f32, timer.lap()) / 1.0e+6});
+}
+
+//--------------------------------------------------------------------------------------------------
+pub fn build_code(digits: *Input) u64 {
+    var code: u64 = 0;
+    for (digits.items) |v| {
+        code *= 10;
+        code += v;
+    }
+    return code;
+}
+
+//--------------------------------------------------------------------------------------------------
+pub fn forward_digit(digit_idx: usize, z_in: i64, digits: *Input, find_max: bool) bool {
+    const P = [_]i16{ 7, 8, 10, 4, 4, 6, 11, 13, 1, 8, 4, 13, 4, 14 };
+    const D = [_]i16{ 1, 1, 1, 26, 26, 1, 26, 26, 1, 1, 26, 1, 26, 26 };
+    const A = [_]i16{ 12, 13, 13, -2, -10, 13, -14, -5, 15, 15, -14, 10, -14, -5 };
+
+    // Psuedocode of the input program unit
+    // ------------------------------------
+    // 1) Equality test. TRUE if we couldn't match the input digit (w) to A[]
+    // const x: bool = (w != (z % 26) + A[digit_idx]);
+
+    // 2) Optional truncate. DECREASE Z by a factor of 26
+    // if (truncate)
+    //     z /= 26;
+
+    // 3) Optional Branch. INCREASE Z by a factor of 26  (AND increment by variable amount)
+    // if (x)
+    // {
+    //     var z = z_in;
+    //     z *= 26; // Untruncate
+    //     z += w + P[digit_idx];
+    // }
+
+    // Truncates only happen when D[] is 26.
+    // Also notice that those occassions match when A[] is a negative number.
+    // Or put another way: when D[] is 1, we can't truncate and on those
+    // occassions A[] is a number larger than 10, forcing the (x) branch to be taken.
+    // NOTE also there are 7 occassions to truncate and 7 occassions we don't.
+    //
+    // The goal of the program is that register z (an accumulator that begins at zero)
+    // also finishes with a zero value (indicating a valid code).
+    // To do this we need to balance the amount of times we increase the value (the x branch),
+    // with how many times we decrease the value (truncate).
+    // I.e. 7 increases and 7 decreases.
+    // On the 7 occassions that we do not truncate, it's guaranteed by A[] that the
+    // x branch (increase) will be happen every time.
+    //
+    // GOAL: for the 7 occassions that we truncate we MUST NOT take the x branch.
+    // i.e. input digit (w) MUST be  (z % 26) + A[digit_idx])
+
+    if (digit_idx >= 14) {
+        return true; // Completed!
+    }
+
+    const truncate: bool = D[digit_idx] == 26;
+    if (truncate) {
+        // truncate branch - w is determined
+        const desired_w = @mod(z_in, 26) + A[digit_idx];
+        if (desired_w < 1 or desired_w > 9) {
+            return false; // can't match w
+        }
+        const w: u4 = @intCast(u4, desired_w);
+
+        digits.append(w) catch unreachable;
+        if (forward_digit(digit_idx + 1, @divTrunc(z_in, 26), digits, find_max)) { // Truncate Z
+            return true; // completed: escape recursion, preserving digits
+        }
+        _ = digits.pop();
+    } else {
+
+        // non-truncate branch - need to try all possible digits (w)
+        var w: u4 = if (find_max) 9 else 1; // Start with highest values first?
+        while (w >= 1 and w < 10) {
+            // Increase Z
+            var z = z_in;
+            z *= 26;
+            z += w + P[digit_idx];
+
+            digits.append(w) catch unreachable;
+            if (forward_digit(digit_idx + 1, z, digits, find_max)) {
+                return true; // completed: escape recursion, preserving digits
+            }
+            _ = digits.pop();
+
+            if (find_max) w -= 1 else w += 1;
+        } // while w
+    }
+
+    return false;
 }
 
 //--------------------------------------------------------------------------------------------------
